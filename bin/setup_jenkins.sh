@@ -28,13 +28,13 @@ oc set resources dc jenkins --limits=memory=2Gi,cpu=2 --requests=memory=2Gi,cpu=
 oc rollout resume dc jenkins -n ${GUID}-jenkins
 
 # Create custom agent container image with skopeo
-oc new-build --name=jenkins-slave-appdev --dockerfile=$'FROM docker.io/openshift/jenkins-slave-maven-centos7:v4.0\nUSER root\nRUN yum -y install skopeo apb && \yum clean all\nUSER 1001' -n ${GUID}-jenkins
-
+oc new-build --name=jenkins-slave-appdev --dockerfile=bin/jenkins_dockerfile -n ${GUID}-jenkins
 
 # Create pipeline build config pointing to the ${REPO} with contextDir `openshift-tasks`
 oc create configmap jenkins-config --from-literal="GUID=${GUID}" --from-literal="REPO=${REPO}" --from-literal="CLUSTER=${CLUSTER}"
 
 oc create -f bin/bc-tasks.yml -n ${GUID}-jenkins
+
 #oc set env bc/tasks GUID=${GUID} REPO=${REPO} CLUSTER=${CLUSTER} -n ${GUID}-jenkins
 
 # Make sure that Jenkins is fully up and running before proceeding!
