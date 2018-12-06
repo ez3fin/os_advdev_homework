@@ -33,7 +33,7 @@ oc new-build -D $'FROM docker.io/openshift/jenkins-slave-maven-centos7:v3.11\n
 # Create pipeline build config pointing to the ${REPO} with contextDir `openshift-tasks`
 oc create configmap jenkins-config --from-literal="GUID=${GUID}" --from-literal="REPO=${REPO}" --from-literal="CLUSTER=${CLUSTER}"
 
-oc process -f ./bin/bc_tasks.yaml -p GIT_REPOSITORY_URL=${REPO} -p GUID=${GUID} | oc create -f - -n ${GUID}-jenkins
+oc process -f ./bin/bc_tasks.yml -p GIT_REPOSITORY_URL=${REPO} -p GUID=${GUID} | oc create -f - -n ${GUID}-jenkins
 
 # Make sure that Jenkins is fully up and running before proceeding!
 while : ; do
