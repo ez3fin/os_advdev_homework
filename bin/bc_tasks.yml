@@ -1,0 +1,38 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: "bc-tasks-pipeline"
+objects:
+- apiVersion: build.openshift.io/v1
+  kind: BuildConfig
+  metadata:
+    creationTimestamp: null
+    name: tasks-pipeline
+  spec:
+    failedBuildsHistoryLimit: 2
+    runPolicy: Serial
+    source:
+      contextDir: openshift-tasks
+      git:
+        ref: ${GIT_BRANCH}
+        uri: ${GIT_REPOSITORY_URL}
+      type: Git
+    strategy:
+      jenkinsPipelineStrategy:
+        env:
+        - name: GUID
+          value: ${GUID}
+        jenkinsfilePath: Jenkinsfile
+      type: JenkinsPipeline
+    successfulBuildsHistoryLimit: 3
+    triggers: []
+  status:
+    lastVersion: 0
+parameters:
+- name: GIT_REPOSITORY_URL
+  description: Repository URL
+- name: GIT_BRANCH
+  description: Git branch
+  value: master
+- name: GUID
+  description: Unique GUID
