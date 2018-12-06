@@ -92,6 +92,32 @@ podTemplate(
         // TBD: Deploy to development Project
         //      Set Image, Set VERSION
         //      Make sure the application is running and ready before proceeding
+
+        openshift.withCluster() {
+          openshift.withProject("${GUID}-tasks-dev") {
+            // Update image reference and version on dc
+            openshift.set("image", "dc/tasks", "tasks=docker-registry.default.svc:5000/${GUID}-tasks-dev/tasks:${devTag}")
+            openshift.set("env", "dc", "tasks", "VERSION='${devTag} (tasks-dev)'")
+
+            // Update tasks config map with actual user and roles
+            openshift.selector('configmap', 'tasks-config').delete()
+            openshift.create('configmap', 'tasks-config', '--from-file=./configuration/application-users.properties', '--from-file=./configuration/application-roles.properties' )
+
+            // Deploy the development application.
+            openshift.selector("dc", "tasks").rollout().latest()
+
+            // Wait for deployment
+            def dc = openshift.selector("dc", "tasks").object()
+            def dc_version = dc.status.latestVersion
+            def rc = openshift.selector("rc", "tasks-${dc_version}").object()
+
+            echo "Waiting for ReplicationController tasks-${dc_version} to be ready"
+            while (rc.spec.replicas != rc.status.readyReplicas) {
+              sleep 5
+              rc = openshift.selector("rc", "tasks-${dc_version}").object()
+            }
+          }
+        }
       }
 
       // Copy Image to Nexus container registry
