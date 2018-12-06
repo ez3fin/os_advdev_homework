@@ -107,15 +107,8 @@ podTemplate(
             openshift.selector("dc", "tasks").rollout().latest()
 
             // Wait for deployment
-            def dc = openshift.selector("dc", "tasks").object()
-            def dc_version = dc.status.latestVersion
-            def rc = openshift.selector("rc", "tasks-${dc_version}").object()
-
-            echo "Waiting for ReplicationController tasks-${dc_version} to be ready"
-            while (rc.spec.replicas != rc.status.readyReplicas) {
-              sleep 5
-              rc = openshift.selector("rc", "tasks-${dc_version}").object()
-            }
+            openshiftVerifyDeployment depCfg: 'tasks', namespace: "${GUID}-tasks-dev", replicaCount: '1', verbose: 'false', verifyReplicaCount: 'false', waitTime: '', waitUnit: 'sec'
+            openshiftVerifyService namespace: "${GUID}-tasks-dev", svcName: 'tasks', verbose: 'false'
           }
         }
       }
@@ -124,9 +117,13 @@ podTemplate(
       stage('Copy Image to Nexus container registry') {
         echo "Copy image to Nexus container registry"
 
-        // TBD: Copy image to Nexus container registry
+        sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:\$(oc whoami -t) --dest-creds admin:redhat docker://docker-registry.default.svc.cluster.local:5000/${GUID}-tasks-dev/tasks:${devTag} docker://nexus-registry.gpte-hw-cicd.svc.cluster.local:5000/tasks:${devTag}"
 
-        // TBD: Tag the built image with the production tag.
+        openshift.withCluster() {
+          openshift.withProject("${GUID}-tasks-dev") {
+            openshift.tag("${GUID}-tasks-dev/tasks:${devTag}", "${GUID}-tasks-dev/tasks:${prodTag}")
+          }
+        }
       }
 
       // Blue/Green Deployment into Production
@@ -139,11 +136,38 @@ podTemplate(
         //      Set Image, Set VERSION
         //      Deploy into the other application
         //      Make sure the application is running and ready before proceeding
+        openshift.withCluster() {
+          openshift.withProject("${GUID}-tasks-prod") {
+            activeApp = openshift.selector("route", "tasks").object().spec.to.name
+            if (activeApp == "tasks-green") {
+              destApp = "tasks-blue"
+            }
+
+            echo "Active Application:      " + activeApp
+            echo "Destination Application: " + destApp
+
+            def dc = openshift.selector("dc", "${destApp}").object()
+            dc.spec.template.spec.containers[0].image="docker-registry.default.svc:5000/${GUID}-tasks-dev/tasks:${prodTag}"
+            openshift.apply(dc)
+
+            // Update the environment variable VERSION
+            sh "oc set env dc/${destApp} VERSION=\"${prodTag} (${destApp})\" -n ${GUID}-tasks-prod"
+
+            // Update config map with user data
+            openshift.selector("configmap", "${destApp}-config").delete()
+            def configmap = openshift.create("configmap", "${destApp}-config", "--from-file=./configuration/application-users.properties", "--from-file=./configuration/application-roles.properties" )
+
+            // Deploy the inactive application.
+            openshiftDeploy depCfg: destApp, namespace: "${GUID}-tasks-prod", verbose: 'false', waitTime: '', waitUnit: 'sec'
+            openshiftVerifyDeployment depCfg: destApp, namespace: "${GUID}-tasks-prod", replicaCount: '1', verbose: 'false', verifyReplicaCount: 'true', waitTime: '', waitUnit: 'sec'
+            openshiftVerifyService namespace: "${GUID}-tasks-prod", svcName: destApp, verbose: 'false'
+          }
+        }
       }
 
       stage('Switch over to new Version') {
         echo "Switching Production application to ${destApp}."
-        // TBD: Execute switch
+        sh "oc patch route tasks -n ${GUID}-tasks-prod -p '{\"spec\":{\"to\":{\"name\":\"${destApp}\"}}}'"
       }
     }
   }
