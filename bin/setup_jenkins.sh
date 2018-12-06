@@ -15,12 +15,7 @@ echo "Setting up Jenkins in project ${GUID}-jenkins from Git Repo ${REPO} for Cl
 # Set up Jenkins with sufficient resources
 oc project $GUID-jenkins
 
-if [[$LOCAL_TEST == true]]; then
-    # Use ephemeral image in Minishift
-    oc new-app jenkins-ephemeral --param ENABLE_OAUTH=true --param MEMORY_LIMIT=2Gi -n ${GUID}-jenkins
-else
-    oc new-app jenkins-persistent --param ENABLE_OAUTH=true --param MEMORY_LIMIT=2Gi --param VOLUME_CAPACITY=4Gi -n ${GUID}-jenkins
-fi
+oc new-app jenkins-persistent --param ENABLE_OAUTH=true --param MEMORY_LIMIT=2Gi --param VOLUME_CAPACITY=4Gi -n ${GUID}-jenkins
 
 # Add cpu to speed up the deployment
 oc rollout pause dc jenkins -n ${GUID}-jenkins
@@ -31,12 +26,14 @@ oc rollout resume dc jenkins -n ${GUID}-jenkins
 # Cannot use a separate docker file here...
 #oc new-build --name=jenkins-slave-appdev --dockerfile=bin/jenkins_dockerfile -n ${GUID}-jenkins
 
-oc new-build -D $'FROM docker.io/openshift/jenkins-slave-maven-centos7:v3.11\nUSER root\nRUN yum -y install skopeo && yum clean all\nUSER 1001' --name=jenkins-agent-appdev -n ${GUID}-jenkins
+oc new-build -D $'FROM docker.io/openshift/jenkins-slave-maven-centos7:v3.11\n
+        USER root\nRUN yum -y install skopeo && yum clean all\n
+        USER 1001' --name=jenkins-agent-appdev -n ${GUID}-jenkins
 
 # Create pipeline build config pointing to the ${REPO} with contextDir `openshift-tasks`
 oc create configmap jenkins-config --from-literal="GUID=${GUID}" --from-literal="REPO=${REPO}" --from-literal="CLUSTER=${CLUSTER}"
 
-oc create -f bin/bc-tasks.yml -n ${GUID}-jenkins
+oc process -f ./bin/bc_tasks.yaml -p GIT_REPOSITORY_URL=${REPO} -p GUID=${GUID} | oc create -f - -n ${GUID}-jenkins
 
 # Make sure that Jenkins is fully up and running before proceeding!
 while : ; do
